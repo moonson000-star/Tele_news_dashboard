@@ -28,6 +28,11 @@ button:disabled{opacity:.5;cursor:default}
 .list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
 .item .name{flex:1;word-break:break-all}
+.item.col{flex-direction:column;align-items:stretch}
+.item.col>.row{flex-wrap:nowrap}
+.item .name{min-width:0;word-break:normal;overflow-wrap:anywhere}
+.item select{padding:6px 4px;font-size:13px;flex:0 0 auto}
+input[type=checkbox]{padding:0;width:18px;height:18px;flex:0 0 auto;min-width:18px;accent-color:var(--acc)}
 .item .err{color:var(--red);font-size:12px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px}
 .chip{background:var(--chip);border-radius:999px;padding:3px 6px 3px 10px;font-size:13px;display:inline-flex;align-items:center;gap:2px}
@@ -78,7 +83,8 @@ code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
 
   <section>
     <h2>🔑 키워드 우선순위</h2>
-    <p class="hint">쉼표로 여러 개 입력. 영문 약어(CB·EB·IPO)는 단어 단위로만 매칭됩니다.</p>
+    <p class="hint">쉼표로 여러 개 입력. 영문 약어(CB·EB·IPO)는 단어 단위로만 매칭됩니다. 채널 하나에만 적용할 제외 키워드는 위 채널 목록에서 설정하세요.</p>
+    <label class="switch" style="margin-bottom:10px"><input type="checkbox" id="urgentHeadline"> 🔴 긴급 키워드는 <b>제목(첫 줄)</b>에서만 찾기 (본문 언급 오탐 방지, 권장)</label>
     <div id="kwBox"></div>
   </section>
 
@@ -115,6 +121,7 @@ code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
     <div class="list" id="engList"></div>
     <div class="grid" style="margin-top:12px">
       <label class="field"><span>Gemini 모델</span><input id="gModel"></label>
+      <label class="field"><span>Gemini 보조 모델 (혼잡 시)</span><input id="gFallback"></label>
       <label class="field"><span>Claude 모델 (구독)</span>
         <select id="cModel"><option value="sonnet">Sonnet (권장)</option><option value="haiku">Haiku (사용량 절약)</option><option value="opus">Opus (고품질·사용량 큼)</option></select></label>
       <label class="field"><span>GitHub Models 모델</span><input id="ghModel"></label>
@@ -173,10 +180,18 @@ function render(){
   // 채널
   $('chList').innerHTML = cfg.channels.map((c, i) => {
     const st = status?.channels?.[c.id] || {};
-    return `<div class="item"><input type="checkbox" data-ch-toggle="${i}" ${c.enabled !== false ? 'checked' : ''} title="사용">
+    const ex = c.exclude || [];
+    return `<div class="item col"><div class="row" style="width:100%">
+      <input type="checkbox" data-ch-toggle="${i}" ${c.enabled !== false ? 'checked' : ''} title="사용">
       <span class="name">@${esc(c.id)} ${st.error ? `<div class="err">⚠️ ${esc(st.error)}</div>` : ''}</span>
-      <a href="https://t.me/s/${encodeURIComponent(c.id)}" target="_blank" rel="noopener" class="hint" style="margin:0">미리보기</a>
-      <button class="ghost" data-ch-del="${i}" aria-label="삭제">✕</button></div>`;
+      <select data-ch-weight="${i}" title="채널 가중치" aria-label="채널 가중치">
+        ${['high','normal','low'].map(w => `<option value="${w}" ${(c.weight || 'normal') === w ? 'selected' : ''}>${{high:'가중치 ↑',normal:'보통',low:'가중치 ↓'}[w]}</option>`).join('')}</select>
+      <a href="https://t.me/s/${encodeURIComponent(c.id)}" target="_blank" rel="noopener" class="hint" style="margin:0;text-decoration:none" title="t.me 미리보기 열기" aria-label="미리보기">↗</a>
+      <button class="ghost" data-ch-del="${i}" aria-label="삭제">✕</button></div>
+      <details style="width:100%" ${ex.length ? '' : ''}><summary class="hint" style="margin:4px 0;cursor:pointer">이 채널만 제외할 키워드 (${ex.length})</summary>
+        <div class="chips">${ex.map((w, j) => `<span class="chip">${esc(w)}<button data-chex-del="${i}:${j}" aria-label="삭제">×</button></span>`).join('')}</div>
+        <div class="row"><input data-chex-in="${i}" placeholder="예: [PR Newswire] (쉼표 구분)"><button data-chex-add="${i}">추가</button></div>
+      </details></div>`;
   }).join('') || '<div class="hint">채널이 없습니다.</div>';
 
   // 키워드
@@ -204,6 +219,8 @@ function render(){
   $('maxItems').value = cfg.summary.max_items ?? 10;
   $('lookback').value = cfg.summary.first_run_lookback_hours ?? 12;
   $('gModel').value = cfg.llm.gemini_model ?? 'gemini-flash-latest';
+  $('gFallback').value = cfg.llm.gemini_fallback_model ?? 'gemini-flash-lite-latest';
+  $('urgentHeadline').checked = cfg.keywords.urgent_headline_only !== false;
   $('ghModel').value = cfg.llm.github_model ?? 'openai/gpt-4.1-mini';
   $('cModel').value = cfg.llm.claude_model ?? 'sonnet';
   renderEngines();
@@ -255,6 +272,8 @@ function collect(){
   cfg.summary.max_items = Math.max(1, Math.min(50, parseInt($('maxItems').value) || 10));
   cfg.summary.first_run_lookback_hours = Math.max(1, Math.min(72, parseInt($('lookback').value) || 12));
   cfg.llm.gemini_model = $('gModel').value.trim() || 'gemini-flash-latest';
+  cfg.llm.gemini_fallback_model = $('gFallback').value.trim() || 'gemini-flash-lite-latest';
+  cfg.keywords.urgent_headline_only = $('urgentHeadline').checked;
   cfg.llm.github_model = $('ghModel').value.trim() || 'openai/gpt-4.1-mini';
   cfg.llm.claude_model = $('cModel').value;
   cfg.llm.order ??= ['gemini', 'claude', 'github'];
@@ -285,6 +304,8 @@ document.addEventListener('click', (e) => {
   if (d.chDel !== undefined) { cfg.channels.splice(+d.chDel, 1); render(); setDirty(); }
   else if (d.kwDel) { const [t, i] = d.kwDel.split(':'); cfg.keywords[t].splice(+i, 1); render(); setDirty(); }
   else if (d.kwAdd) { addKw(d.kwAdd); }
+  else if (d.chexAdd !== undefined) { addChEx(+d.chexAdd); }
+  else if (d.chexDel) { const [i, j] = d.chexDel.split(':').map(Number); cfg.channels[i].exclude.splice(j, 1); if (!cfg.channels[i].exclude.length) delete cfg.channels[i].exclude; render(); openEx(i); setDirty(); }
   else if (d.wlDel !== undefined) { cfg.watchlist.splice(+d.wlDel, 1); render(); setDirty(); }
   else if (d.engUp || d.engDown) {
     const o = cfg.llm.order ??= ['gemini', 'claude', 'github']; const e = d.engUp || d.engDown; const i = o.indexOf(e); const j = d.engUp ? i - 1 : i + 1;
@@ -299,6 +320,10 @@ document.addEventListener('change', (e) => {
     if (!cfg.llm.order.length) $('saveMsg').textContent = '⚠️ 엔진이 모두 꺼지면 요약 없이 목록만 전송됩니다';
     renderEngines(); setDirty(); return;
   }
+  if (e.target.dataset.chWeight !== undefined) {
+    const c = cfg.channels[+e.target.dataset.chWeight]; if (e.target.value === 'normal') delete c.weight; else c.weight = e.target.value; setDirty(); return;
+  }
+  if (e.target.dataset.chexIn !== undefined) return;
   if (e.target.dataset.chToggle !== undefined) { cfg.channels[+e.target.dataset.chToggle].enabled = e.target.checked; setDirty(); }
   else if (e.target.closest('#app') && !e.target.dataset.kwIn && e.target.id !== 'chIn' && !e.target.id.startsWith('wl') && e.target.id !== 'tIn') {
     if (e.target.id === 'wDay') $('wTime').disabled = e.target.value === 'off';
@@ -308,9 +333,16 @@ document.addEventListener('change', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   if (e.target.dataset?.kwIn) addKw(e.target.dataset.kwIn);
+  else if (e.target.dataset?.chexIn !== undefined) addChEx(+e.target.dataset.chexIn);
   else if (e.target.id === 'chIn') $('chAdd').click();
   else if (e.target.id === 'wlName' || e.target.id === 'wlAlias') $('wlAdd').click();
 });
+function openEx(i){ const d = document.querySelectorAll('#chList details')[i]; if (d) d.open = true; }
+function addChEx(i){
+  const inp = document.querySelector(`[data-chex-in="${i}"]`); const words = splitList(inp.value); if (!words.length) return;
+  const c = cfg.channels[i]; c.exclude = [...new Set([...(c.exclude || []), ...words])];
+  render(); openEx(i); setDirty(); document.querySelector(`[data-chex-in="${i}"]`)?.focus();
+}
 function addKw(t){
   const inp = document.querySelector(`[data-kw-in="${t}"]`); const words = splitList(inp.value); if (!words.length) return;
   for (const w of words) { for (const k of ['urgent','high','exclude']) cfg.keywords[k] = cfg.keywords[k].filter(x => x.toLowerCase() !== w.toLowerCase()); cfg.keywords[t].push(w); }

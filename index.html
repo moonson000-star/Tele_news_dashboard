@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>뉴스 다이제스트 설정</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--mute:#6b7280;--line:#e3e6ea;--acc:#1f5eff;--acc-ink:#fff;--red:#d92d20;--yel:#b54708;--grn:#067647;--chip:#eef1f5}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a20;--ink:#e7e9ee;--mute:#9aa3af;--line:#2a2f37;--acc:#5b8cff;--acc-ink:#0b0d10;--chip:#232831}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Segoe UI",sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;gap:8px;align-items:center}
+header h1{font-size:16px;margin:0;flex:1}
+main{max-width:760px;margin:0 auto;padding:16px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+h2{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:6px}
+.hint{color:var(--mute);font-size:13px;margin:4px 0 10px}
+input,select{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+input:focus,select:focus{outline:2px solid var(--acc);outline-offset:-1px}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:8px 12px;cursor:pointer}
+button.primary{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600}
+button.ghost{border:none;background:none;color:var(--mute);padding:4px 6px}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>input{flex:1}
+.list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.item .name{flex:1;word-break:break-all}
+.item .err{color:var(--red);font-size:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px}
+.chip{background:var(--chip);border-radius:999px;padding:3px 6px 3px 10px;font-size:13px;display:inline-flex;align-items:center;gap:2px}
+.chip button{border:none;background:none;padding:0 4px;color:var(--mute);font-size:14px}
+.tier{margin-bottom:12px}
+.tier label{font-weight:600;font-size:13px}
+.t-urgent label{color:var(--red)}.t-high label{color:var(--yel)}.t-exclude label{color:var(--mute)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.field{display:flex;flex-direction:column;gap:4px}.field span{font-size:13px;color:var(--mute)}
+.switch{display:flex;align-items:center;gap:8px}
+.bar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 16px;display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.bar .msg{flex:1;font-size:13px;color:var(--mute)}
+.dirty{color:var(--yel)!important;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}
+.ok{color:var(--grn)}.bad{color:var(--red)}
+.hidden{display:none!important}
+#login section{max-width:520px;margin:24px auto}
+code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>📰 뉴스 다이제스트 설정</h1>
+  <button class="ghost" id="reloadBtn" title="다시 불러오기">↻</button>
+  <button class="ghost" id="logoutBtn">로그아웃</button>
+</header>
+
+<div id="login" class="hidden"><main><section>
+  <h2>🔐 연결 설정</h2>
+  <p class="hint">설정을 저장한 비공개 저장소와 토큰을 입력하세요. 토큰은 <b>이 기기 브라우저에만</b> 저장됩니다.</p>
+  <div class="list">
+    <label class="field"><span>저장소 (소유자/이름)</span><input id="repoIn" placeholder="myname/tg-news-digest" autocomplete="off"></label>
+    <label class="field"><span>브랜치</span><input id="branchIn" value="main"></label>
+    <label class="field"><span>Fine-grained 토큰 (Contents·Actions 읽기/쓰기)</span><input id="tokenIn" type="password" placeholder="github_pat_..." autocomplete="off"></label>
+    <button class="primary" id="loginBtn">연결</button>
+    <div class="hint" id="loginMsg"></div>
+  </div>
+</section></main></div>
+
+<div id="app" class="hidden">
+<main>
+  <section>
+    <h2>📡 채널</h2>
+    <p class="hint">공개 채널 아이디(@없이) 또는 t.me 링크. 웹 미리보기(t.me/s/채널)가 열리는 채널만 수집됩니다.</p>
+    <div class="row"><input id="chIn" placeholder="@channel 또는 https://t.me/channel"><button id="chAdd">추가</button></div>
+    <div class="list" id="chList"></div>
+  </section>
+
+  <section>
+    <h2>🔑 키워드 우선순위</h2>
+    <p class="hint">쉼표로 여러 개 입력. 영문 약어(CB·EB·IPO)는 단어 단위로만 매칭됩니다.</p>
+    <div id="kwBox"></div>
+  </section>
+
+  <section>
+    <h2>👀 Watchlist</h2>
+    <p class="hint">언급 시 리포트 상단 별도 섹션 + 즉시 알림. <b>요약 엔진(LLM)에는 전송되지 않습니다.</b> 진행 중인 딜 대상은 입력을 자제하세요.</p>
+    <div class="row"><input id="wlName" placeholder="회사명"><input id="wlAlias" placeholder="별칭·종목코드 (쉼표)"><button id="wlAdd">추가</button></div>
+    <div class="list" id="wlList"></div>
+  </section>
+
+  <section>
+    <h2>⏰ 보고 주기 <span class="hint" style="margin:0">(한국시간 · 30분 단위 권장)</span></h2>
+    <div class="row"><input id="tIn" type="time" step="1800" value="08:00" style="flex:0 0 auto"><button id="tAdd">시각 추가</button></div>
+    <div class="chips" id="tList"></div>
+    <div class="grid" style="margin-top:12px">
+      <label class="switch"><input type="checkbox" id="weekdaysOnly"> 평일만 보고</label>
+      <label class="switch"><input type="checkbox" id="urgentAlert"> 긴급·Watchlist 즉시 알림</label>
+      <label class="switch"><input type="checkbox" id="sendEmpty"> 새 메시지 없어도 보고</label>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <label class="field"><span>주간 다이제스트 요일</span>
+        <select id="wDay"><option value="off">끄기</option><option>MON</option><option>TUE</option><option>WED</option><option>THU</option><option>FRI</option><option>SAT</option><option>SUN</option></select></label>
+      <label class="field"><span>주간 다이제스트 시각</span><input id="wTime" type="time" value="19:00"></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>🧾 요약 형식 · 엔진</h2>
+    <div class="grid">
+      <label class="field"><span>리포트 최대 항목 수</span><input id="maxItems" type="number" min="1" max="50"></label>
+      <label class="field"><span>첫 수집 시 과거 범위(시간)</span><input id="lookback" type="number" min="1" max="72"></label>
+    </div>
+    <p class="hint" style="margin-top:14px"><b>요약 엔진 순서</b> — 위에서부터 시도하고, 실패·한도 초과·키 미등록이면 다음 엔진으로 넘어갑니다. 모두 실패하면 요약 없이 키워드 우선순위 목록을 보냅니다.</p>
+    <div class="list" id="engList"></div>
+    <div class="grid" style="margin-top:12px">
+      <label class="field"><span>Gemini 모델</span><input id="gModel"></label>
+      <label class="field"><span>Claude 모델 (구독)</span>
+        <select id="cModel"><option value="sonnet">Sonnet (권장)</option><option value="haiku">Haiku (사용량 절약)</option><option value="opus">Opus (고품질·사용량 큼)</option></select></label>
+      <label class="field"><span>GitHub Models 모델</span><input id="ghModel"></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>📈 상태</h2>
+    <div id="status" class="hint">불러오는 중…</div>
+  </section>
+</main>
+<div class="bar">
+  <span class="msg" id="saveMsg">변경 사항 없음</span>
+  <button id="saveBtn" disabled>저장</button>
+  <button class="primary" id="saveRunBtn" disabled>저장 후 바로 실행</button>
+</div>
+</div>
+
+<script>
+const LS = 'tgdigest.conn';
+const $ = (id) => document.getElementById(id);
+let conn = null, cfg = null, sha = null, dirty = false;
+
+function loadConn(){ try { return JSON.parse(localStorage.getItem(LS) || 'null'); } catch { return null; } }
+function saveConn(c){ try { localStorage.setItem(LS, JSON.stringify(c)); } catch {} }
+
+async function gh(path, opts = {}){
+  const r = await fetch(`https://api.github.com/repos/${conn.repo}${path}`, {
+    ...opts,
+    headers: { 'Authorization': `Bearer ${conn.token}`, 'Accept': opts.accept || 'application/vnd.github+json',
+               'X-GitHub-Api-Version': '2022-11-28', ...(opts.body ? {'Content-Type':'application/json'} : {}) },
+  });
+  if (!r.ok) { const t = await r.text(); const e = new Error(`${r.status} ${t.slice(0,160)}`); e.status = r.status; throw e; }
+  return opts.accept === 'application/vnd.github.raw+json' ? r.text() : (r.status === 204 ? null : r.json());
+}
+const b64dec = (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g,'')), c => c.charCodeAt(0)));
+const b64enc = (s) => { const b = new TextEncoder().encode(s); let out=''; b.forEach(x => out += String.fromCharCode(x)); return btoa(out); };
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const splitList = (s) => s.split(/[,\n]/).map(x => x.trim()).filter(Boolean);
+const normCh = (s) => s.trim().replace(/^https?:\/\//,'').replace(/^(www\.)?t(elegram)?\.me\//,'').replace(/^s\//,'').replace(/^@/,'').split(/[/?]/)[0];
+
+function setDirty(v = true){
+  dirty = v; $('saveBtn').disabled = $('saveRunBtn').disabled = !v;
+  $('saveMsg').textContent = v ? '저장되지 않은 변경 있음' : '변경 사항 없음';
+  $('saveMsg').classList.toggle('dirty', v);
+}
+
+function defaults(c){
+  c.channels ||= []; c.keywords ||= {}; ['urgent','high','exclude'].forEach(t => c.keywords[t] ||= []);
+  c.watchlist ||= []; c.schedule ||= {}; c.schedule.daily ||= []; c.summary ||= {}; c.llm ||= {};
+  return c;
+}
+
+let status = null;
+function render(){
+  // 채널
+  $('chList').innerHTML = cfg.channels.map((c, i) => {
+    const st = status?.channels?.[c.id] || {};
+    return `<div class="item"><input type="checkbox" data-ch-toggle="${i}" ${c.enabled !== false ? 'checked' : ''} title="사용">
+      <span class="name">@${esc(c.id)} ${st.error ? `<div class="err">⚠️ ${esc(st.error)}</div>` : ''}</span>
+      <a href="https://t.me/s/${encodeURIComponent(c.id)}" target="_blank" rel="noopener" class="hint" style="margin:0">미리보기</a>
+      <button class="ghost" data-ch-del="${i}" aria-label="삭제">✕</button></div>`;
+  }).join('') || '<div class="hint">채널이 없습니다.</div>';
+
+  // 키워드
+  const T = {urgent:'🔴 긴급 (즉시 알림 + 상단)', high:'🟡 중요 (우선 배치)', exclude:'⚪ 제외 (리포트에서 제거)'};
+  $('kwBox').innerHTML = Object.entries(T).map(([t, label]) => `
+    <div class="tier t-${t}"><label>${label}</label>
+      <div class="chips">${cfg.keywords[t].map((w, i) => `<span class="chip">${esc(w)}<button data-kw-del="${t}:${i}" aria-label="삭제">×</button></span>`).join('')}</div>
+      <div class="row"><input data-kw-in="${t}" placeholder="키워드 추가 (쉼표 구분)"><button data-kw-add="${t}">추가</button></div>
+    </div>`).join('');
+
+  // Watchlist
+  $('wlList').innerHTML = cfg.watchlist.map((w, i) => `<div class="item"><span class="name"><b>${esc(w.name)}</b>
+     ${(w.alias||[]).length ? `<span class="hint" style="margin:0"> · ${esc(w.alias.join(', '))}</span>` : ''}</span>
+     <button class="ghost" data-wl-del="${i}" aria-label="삭제">✕</button></div>`).join('') || '<div class="hint">비어 있음</div>';
+
+  // 스케줄
+  const s = cfg.schedule;
+  $('tList').innerHTML = [...s.daily].sort().map((t, i) => `<span class="chip">${esc(t)}<button data-t-del="${esc(t)}" aria-label="삭제">×</button></span>`).join('') || '<span class="hint">정기 보고 없음</span>';
+  $('weekdaysOnly').checked = s.weekdays_only !== false;
+  $('urgentAlert').checked = s.urgent_alert !== false;
+  $('sendEmpty').checked = !!s.send_empty;
+  const [wd, wt] = String(s.weekly || 'off').toUpperCase() === 'OFF' ? ['off', '19:00'] : String(s.weekly).toUpperCase().split(/\s+/);
+  $('wDay').value = wd; $('wTime').value = wt || '19:00'; $('wTime').disabled = wd === 'off';
+
+  $('maxItems').value = cfg.summary.max_items ?? 10;
+  $('lookback').value = cfg.summary.first_run_lookback_hours ?? 12;
+  $('gModel').value = cfg.llm.gemini_model ?? 'gemini-flash-latest';
+  $('ghModel').value = cfg.llm.github_model ?? 'openai/gpt-4.1-mini';
+  $('cModel').value = cfg.llm.claude_model ?? 'sonnet';
+  renderEngines();
+}
+
+const ENG = {gemini: ['Gemini 무료', 'GitHub Secret: GEMINI_API_KEY'], claude: ['Claude 구독', 'GitHub Secret: CLAUDE_CODE_OAUTH_TOKEN'], github: ['GitHub Models 무료', '별도 키 불필요']};
+function renderEngines(){
+  const order = cfg.llm.order ?? ['gemini', 'claude', 'github'];
+  const all = [...order, ...Object.keys(ENG).filter(e => !order.includes(e))];
+  $('engList').innerHTML = all.map((e) => {
+    const on = order.includes(e), i = order.indexOf(e);
+    return `<div class="item"><input type="checkbox" data-eng-toggle="${e}" ${on ? 'checked' : ''} title="사용">
+      <span class="name"><b>${on ? (i + 1) + '순위 · ' : ''}${ENG[e][0]}</b><div class="hint" style="margin:0">${ENG[e][1]}</div></span>
+      ${on ? `<button class="ghost" data-eng-up="${e}" ${i === 0 ? 'disabled' : ''} aria-label="위로">▲</button>
+              <button class="ghost" data-eng-down="${e}" ${i === order.length - 1 ? 'disabled' : ''} aria-label="아래로">▼</button>` : ''}</div>`;
+  }).join('');
+}
+
+function renderStatus(){
+  if (!status) { $('status').textContent = '아직 실행 기록이 없습니다 (첫 실행 후 표시).'; return; }
+  const f = (s) => s ? new Date(s).toLocaleString('ko-KR', {timeZone:'Asia/Seoul', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '-';
+  const usage = Object.entries(status.llm_usage || {}).sort().slice(-7).map(([d, u]) => `${d.slice(5)}: G ${u.gemini||0} / GH ${u.github||0}`).join(' · ');
+  const hist = (status.history || []).slice(-8).reverse().map(h =>
+    `<tr><td>${f(h.at)}</td><td>${h.kind === 'weekly' ? '주간' : '정기'}</td><td>${h.raw}</td><td>${h.excluded}</td><td>${esc(h.engine)}</td></tr>`).join('');
+  $('status').innerHTML = `
+    <div class="grid" style="color:var(--ink)">
+      <div>마지막 실행<br><b>${f(status.updated_at)}</b></div>
+      <div>마지막 정기 보고<br><b>${f(status.last_report_at)}</b></div>
+      <div>최근 7일 수집<br><b>${status.message_count_7d ?? 0}건</b></div>
+      <div>일시정지<br><b>${status.paused_until ? f(status.paused_until) + '까지' : '없음'}</b></div>
+    </div>
+    ${status.config_error ? `<p class="bad">⚠️ 설정 오류: ${esc(status.config_error)}</p>` : ''}
+    <p class="hint">LLM 호출(최근 7일): ${esc(usage || '-')}</p>
+    ${hist ? `<table><tr><th>시각</th><th>종류</th><th>수집</th><th>제외</th><th>엔진</th></tr>${hist}</table>` : ''}`;
+}
+
+async function load(){
+  $('saveMsg').textContent = '불러오는 중…';
+  const f = await gh(`/contents/config.yaml?ref=${encodeURIComponent(conn.branch)}`);
+  sha = f.sha; cfg = defaults(jsyaml.load(b64dec(f.content)) || {});
+  try { status = JSON.parse(await gh(`/contents/status.json?ref=state`, {accept:'application/vnd.github.raw+json'})); } catch { status = null; }
+  render(); renderStatus(); setDirty(false);
+}
+
+function collect(){
+  const s = cfg.schedule;
+  s.weekdays_only = $('weekdaysOnly').checked; s.urgent_alert = $('urgentAlert').checked; s.send_empty = $('sendEmpty').checked;
+  s.weekly = $('wDay').value === 'off' ? 'off' : `${$('wDay').value} ${$('wTime').value || '19:00'}`;
+  cfg.summary.max_items = Math.max(1, Math.min(50, parseInt($('maxItems').value) || 10));
+  cfg.summary.first_run_lookback_hours = Math.max(1, Math.min(72, parseInt($('lookback').value) || 12));
+  cfg.llm.gemini_model = $('gModel').value.trim() || 'gemini-flash-latest';
+  cfg.llm.github_model = $('ghModel').value.trim() || 'openai/gpt-4.1-mini';
+  cfg.llm.claude_model = $('cModel').value;
+  cfg.llm.order ??= ['gemini', 'claude', 'github'];
+}
+
+async function save(run){
+  collect();
+  $('saveBtn').disabled = $('saveRunBtn').disabled = true; $('saveMsg').textContent = '저장 중…';
+  try {
+    const content = jsyaml.dump(cfg, {lineWidth: 200, flowLevel: 2});
+    const r = await gh('/contents/config.yaml', {method:'PUT', body: JSON.stringify({message:'config: 대시보드에서 설정 변경', content: b64enc(content), sha, branch: conn.branch})});
+    sha = r.content.sha; setDirty(false);
+    if (run) {
+      await gh('/actions/workflows/digest.yml/dispatches', {method:'POST', body: JSON.stringify({ref: conn.branch})});
+      $('saveMsg').textContent = '✅ 저장 완료 · 실행 요청됨 (1~2분 내 반영)';
+    } else {
+      $('saveMsg').textContent = '✅ 저장 완료 · 다음 실행(최대 약 30분)부터 반영';
+    }
+  } catch (e) {
+    setDirty(true);
+    $('saveMsg').textContent = e.status === 409 ? '⚠️ 다른 곳에서 설정이 바뀌었습니다. ↻ 다시 불러온 뒤 수정하세요.' : `⚠️ 저장 실패: ${e.message}`;
+  }
+}
+
+// ---- 이벤트 ----
+document.addEventListener('click', (e) => {
+  const d = e.target.dataset; if (!cfg) return;
+  if (d.chDel !== undefined) { cfg.channels.splice(+d.chDel, 1); render(); setDirty(); }
+  else if (d.kwDel) { const [t, i] = d.kwDel.split(':'); cfg.keywords[t].splice(+i, 1); render(); setDirty(); }
+  else if (d.kwAdd) { addKw(d.kwAdd); }
+  else if (d.wlDel !== undefined) { cfg.watchlist.splice(+d.wlDel, 1); render(); setDirty(); }
+  else if (d.engUp || d.engDown) {
+    const o = cfg.llm.order ??= ['gemini', 'claude', 'github']; const e = d.engUp || d.engDown; const i = o.indexOf(e); const j = d.engUp ? i - 1 : i + 1;
+    if (j >= 0 && j < o.length) { [o[i], o[j]] = [o[j], o[i]]; renderEngines(); setDirty(); }
+  }
+  else if (d.tDel) { cfg.schedule.daily = cfg.schedule.daily.filter(t => t !== d.tDel); render(); setDirty(); }
+});
+document.addEventListener('change', (e) => {
+  if (e.target.dataset.engToggle) {
+    const e2 = e.target.dataset.engToggle; const o = cfg.llm.order ??= ['gemini', 'claude', 'github'];
+    cfg.llm.order = e.target.checked ? [...o, e2] : o.filter(x => x !== e2);
+    if (!cfg.llm.order.length) $('saveMsg').textContent = '⚠️ 엔진이 모두 꺼지면 요약 없이 목록만 전송됩니다';
+    renderEngines(); setDirty(); return;
+  }
+  if (e.target.dataset.chToggle !== undefined) { cfg.channels[+e.target.dataset.chToggle].enabled = e.target.checked; setDirty(); }
+  else if (e.target.closest('#app') && !e.target.dataset.kwIn && e.target.id !== 'chIn' && !e.target.id.startsWith('wl') && e.target.id !== 'tIn') {
+    if (e.target.id === 'wDay') $('wTime').disabled = e.target.value === 'off';
+    setDirty();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  if (e.target.dataset?.kwIn) addKw(e.target.dataset.kwIn);
+  else if (e.target.id === 'chIn') $('chAdd').click();
+  else if (e.target.id === 'wlName' || e.target.id === 'wlAlias') $('wlAdd').click();
+});
+function addKw(t){
+  const inp = document.querySelector(`[data-kw-in="${t}"]`); const words = splitList(inp.value); if (!words.length) return;
+  for (const w of words) { for (const k of ['urgent','high','exclude']) cfg.keywords[k] = cfg.keywords[k].filter(x => x.toLowerCase() !== w.toLowerCase()); cfg.keywords[t].push(w); }
+  render(); setDirty(); document.querySelector(`[data-kw-in="${t}"]`).focus();
+}
+$('chAdd').onclick = () => {
+  const ids = splitList($('chIn').value.replace(/\s+/g, ',')).map(normCh).filter(Boolean);
+  const bad = ids.filter(id => !/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(id));
+  for (const id of ids) if (!bad.includes(id) && !cfg.channels.some(c => c.id.toLowerCase() === id.toLowerCase())) cfg.channels.push({id, enabled: true});
+  $('chIn').value = bad.length ? bad.join(', ') : ''; if (bad.length) alert('형식이 올바르지 않은 채널: ' + bad.join(', '));
+  render(); if (ids.length > bad.length) setDirty();
+};
+$('wlAdd').onclick = () => {
+  const name = $('wlName').value.trim(); if (!name) return;
+  const alias = splitList($('wlAlias').value); const ex = cfg.watchlist.find(w => w.name === name);
+  if (ex) ex.alias = [...new Set([...(ex.alias||[]), ...alias])]; else cfg.watchlist.push({name, alias});
+  $('wlName').value = $('wlAlias').value = ''; render(); setDirty();
+};
+$('tAdd').onclick = () => { const t = $('tIn').value; if (t && !cfg.schedule.daily.includes(t)) { cfg.schedule.daily.push(t); cfg.schedule.daily.sort(); render(); setDirty(); } };
+$('saveBtn').onclick = () => save(false);
+$('saveRunBtn').onclick = () => save(true);
+$('reloadBtn').onclick = () => { if (!dirty || confirm('저장하지 않은 변경을 버리고 다시 불러올까요?')) start(); };
+$('logoutBtn').onclick = () => { if (confirm('이 기기에서 토큰을 삭제할까요?')) { try { localStorage.removeItem(LS); } catch {} location.reload(); } };
+$('loginBtn').onclick = async () => {
+  conn = { repo: $('repoIn').value.trim().replace(/^https:\/\/github\.com\//, '').replace(/\/$/, ''), branch: $('branchIn').value.trim() || 'main', token: $('tokenIn').value.trim() };
+  $('loginMsg').textContent = '확인 중…';
+  try { await load(); saveConn(conn); show(true); }
+  catch (e) { $('loginMsg').textContent = `연결 실패: ${e.status === 404 ? '저장소 또는 config.yaml을 찾을 수 없음(토큰 권한 확인)' : e.status === 401 ? '토큰이 올바르지 않음' : e.message}`; }
+};
+window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+function show(app){ $('app').classList.toggle('hidden', !app); $('login').classList.toggle('hidden', app); }
+async function start(){
+  conn = loadConn();
+  if (!conn) { show(false); return; }
+  try { await load(); show(true); } catch (e) { show(false); $('loginMsg').textContent = `연결 실패: ${e.message}`; }
+}
+start();
+</script>
+</body>
+</html>

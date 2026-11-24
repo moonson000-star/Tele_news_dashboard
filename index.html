@@ -109,6 +109,17 @@ code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12px}
         <select id="wDay"><option value="off">끄기</option><option>MON</option><option>TUE</option><option>WED</option><option>THU</option><option>FRI</option><option>SAT</option><option>SUN</option></select></label>
       <label class="field"><span>주간 다이제스트 시각</span><input id="wTime" type="time" value="19:00"></label>
     </div>
+    <h2 style="margin-top:18px">🎧 음성 Daily Review <span class="hint" style="margin:0">(직전 리뷰 이후 보고 내용을 출근길용 음성으로)</span></h2>
+    <div class="grid">
+      <label class="switch"><input type="checkbox" id="rvOn"> 사용</label>
+      <label class="field"><span>생성 시각 (실제 도착은 +10분 내외)</span><input id="rvTime" type="time" value="07:00"></label>
+      <label class="field"><span>목소리</span>
+        <select id="rvVoice"><option value="ko-KR-SunHiNeural">선희 (여성)</option><option value="ko-KR-InJoonNeural">인준 (남성)</option><option value="ko-KR-HyunsuNeural">현수 (남성)</option></select></label>
+      <label class="field"><span>최대 길이(분)</span><input id="rvMax" type="number" min="3" max="20"></label>
+      <label class="field"><span>말하기 속도</span>
+        <select id="rvRate"><option value="+0%">보통</option><option value="+5%">조금 빠르게</option><option value="+10%">빠르게</option><option value="+20%">많이 빠르게</option></select></label>
+      <label class="switch"><input type="checkbox" id="rvWeb"> 웹 검색 보강 (Claude)</label>
+    </div>
   </section>
 
   <section>
@@ -216,6 +227,13 @@ function render(){
   const [wd, wt] = String(s.weekly || 'off').toUpperCase() === 'OFF' ? ['off', '19:00'] : String(s.weekly).toUpperCase().split(/\s+/);
   $('wDay').value = wd; $('wTime').value = wt || '19:00'; $('wTime').disabled = wd === 'off';
 
+  cfg.review ||= {};
+  const dr = String(s.daily_review ?? '07:00');
+  $('rvOn').checked = dr.toLowerCase() !== 'off'; $('rvTime').value = dr.toLowerCase() === 'off' ? '07:00' : dr; $('rvTime').disabled = !$('rvOn').checked;
+  $('rvVoice').value = cfg.review.voice ?? 'ko-KR-SunHiNeural';
+  $('rvMax').value = cfg.review.max_minutes ?? 10;
+  $('rvRate').value = ['+0%','+5%','+10%','+20%'].includes(cfg.review.rate) ? cfg.review.rate : '+5%';
+  $('rvWeb').checked = cfg.review.web_search !== false;
   $('maxItems').value = cfg.summary.max_items ?? 10;
   $('lookback').value = cfg.summary.first_run_lookback_hours ?? 12;
   $('gModel').value = cfg.llm.gemini_model ?? 'gemini-flash-latest';
@@ -269,6 +287,10 @@ function collect(){
   const s = cfg.schedule;
   s.weekdays_only = $('weekdaysOnly').checked; s.urgent_alert = $('urgentAlert').checked; s.send_empty = $('sendEmpty').checked;
   s.weekly = $('wDay').value === 'off' ? 'off' : `${$('wDay').value} ${$('wTime').value || '19:00'}`;
+  s.daily_review = $('rvOn').checked ? ($('rvTime').value || '07:00') : 'off';
+  cfg.review ||= {};
+  cfg.review.voice = $('rvVoice').value; cfg.review.rate = $('rvRate').value; cfg.review.web_search = $('rvWeb').checked;
+  cfg.review.max_minutes = Math.max(3, Math.min(20, parseInt($('rvMax').value) || 10));
   cfg.summary.max_items = Math.max(1, Math.min(50, parseInt($('maxItems').value) || 10));
   cfg.summary.first_run_lookback_hours = Math.max(1, Math.min(72, parseInt($('lookback').value) || 12));
   cfg.llm.gemini_model = $('gModel').value.trim() || 'gemini-flash-latest';
@@ -327,6 +349,7 @@ document.addEventListener('change', (e) => {
   if (e.target.dataset.chToggle !== undefined) { cfg.channels[+e.target.dataset.chToggle].enabled = e.target.checked; setDirty(); }
   else if (e.target.closest('#app') && !e.target.dataset.kwIn && e.target.id !== 'chIn' && !e.target.id.startsWith('wl') && e.target.id !== 'tIn') {
     if (e.target.id === 'wDay') $('wTime').disabled = e.target.value === 'off';
+    if (e.target.id === 'rvOn') $('rvTime').disabled = !e.target.checked;
     setDirty();
   }
 });
